@@ -2,12 +2,26 @@ import pygame
 import math
 import random
 import sys
+import ctypes
 
 ORBIT_RADIUS = 70
 FIREBALL_SIZE = 14
 PARTICLES_PER_FRAME = 3
 MAX_PARTICLES = 600
 ORBIT_SPEED = 1.8
+
+GWL_EXSTYLE = -20
+WS_EX_LAYERED = 0x80000
+WS_EX_TRANSPARENT = 0x20
+LWA_COLORKEY = 0x01
+VK_ESCAPE = 0x1B
+
+
+def make_window_transparent(hwnd):
+    user32 = ctypes.windll.user32
+    ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+    user32.SetLayeredWindowAttributes(hwnd, 0x000000, 0, LWA_COLORKEY)
 
 
 class Particle:
@@ -50,21 +64,18 @@ class Particle:
         else:
             r = int(255 * t / 0.35)
             g = int(50 * t / 0.35)
-            return (max(r, 60), max(g, 10), 0)
-
-    @property
-    def alpha(self):
-        return int(255 * self.t)
+            return (max(r, 20), max(g, 3), 0)
 
 
-def glow_surface(radius, color):
-    r = radius * 3
-    surf = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-    for i in range(r, 0, -1):
-        a = int(40 * (1 - i / r))
-        if a <= 0:
-            continue
-        pygame.draw.circle(surf, (*color, a), (r, r), i)
+def make_glow():
+    diam = FIREBALL_SIZE * 6
+    surf = pygame.Surface((diam, diam))
+    surf.set_colorkey((0, 0, 0))
+    cx = cy = diam // 2
+    max_r = FIREBALL_SIZE * 3
+    for r in range(max_r, FIREBALL_SIZE, -1):
+        t = (r - FIREBALL_SIZE) / (max_r - FIREBALL_SIZE)
+        pygame.draw.circle(surf, (int(255 * t), int(120 * t), 0), (cx, cy), r)
     return surf
 
 
@@ -76,17 +87,20 @@ def main():
     pygame.display.set_caption("Fireballs — ESC to exit")
     clock = pygame.time.Clock()
 
+    hwnd = pygame.display.get_wm_info()['window']
+    make_window_transparent(hwnd)
+
     particles = []
     angle = 0.0
-
-    glow = glow_surface(FIREBALL_SIZE, (255, 120, 0))
+    glow = make_glow()
 
     while True:
+        if ctypes.windll.user32.GetAsyncKeyState(VK_ESCAPE) & 0x8000:
+            pygame.quit()
+            sys.exit()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.quit()
                 sys.exit()
 
@@ -110,22 +124,14 @@ def main():
         screen.fill((0, 0, 0))
 
         for p in particles:
-            a = p.alpha
-            if a <= 0:
-                continue
-            c = p.color
-            s = int(p.size * 2)
-            surf = pygame.Surface((s, s), pygame.SRCALPHA)
-            pygame.draw.circle(surf, (c[0], c[1], c[2], a), (s // 2, s // 2), int(p.size))
-            screen.blit(surf, (int(p.x - p.size), int(p.y - p.size)))
+            pygame.draw.circle(screen, p.color, (int(p.x), int(p.y)), int(p.size))
 
         for i in range(3):
             a = angle + i * (2 * math.pi / 3)
             fx = mx + math.cos(a) * ORBIT_RADIUS
             fy = my + math.sin(a) * ORBIT_RADIUS
             ix, iy = int(fx), int(fy)
-            r = FIREBALL_SIZE * 3
-            screen.blit(glow, (ix - r, iy - r))
+            screen.blit(glow, (ix - FIREBALL_SIZE * 3, iy - FIREBALL_SIZE * 3))
             pygame.draw.circle(screen, (255, 255, 220), (ix, iy), FIREBALL_SIZE)
             pygame.draw.circle(screen, (255, 200, 50), (ix, iy), FIREBALL_SIZE - 2)
             pygame.draw.circle(screen, (255, 100, 0), (ix, iy), FIREBALL_SIZE - 5)
